@@ -5,11 +5,14 @@ const {
 } = require('@solana/web3.js');
 const bs58 = require('bs58');
 
-// Connect to Solana cluster
-const connection = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
+// The WebSocket URL for Solana mainnet-beta
+const WS_URL = 'https://api.mainnet-beta.solana.com/';
+
+// Connect to Solana cluster using the provided WebSocket URL
+const connection = new Connection(WS_URL, 'confirmed');
 
 // The address of the Raydium AMM program on Solana
-const RAYDIUM_AMM_PROGRAM_ID = new PublicKey('RVKd61ztZW9gDPmq3FiFP4RmM3yK7NsAP5mtRuV57YL');
+const RAYDIUM_AMM_PROGRAM_ID = new PublicKey('675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8');
 
 // Function to subscribe to transactions on the Solana blockchain
 async function subscribeRaydium() {
