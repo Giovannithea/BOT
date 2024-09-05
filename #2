@@ -1,0 +1,114 @@
+const {
+    Connection,
+    PublicKey,
+    clusterApiUrl
+} = require('@solana/web3.js');
+const bs58 = require('bs58');
+const { MongoClient } = require('mongodb');
+
+// MongoDB setup
+const MONGO_URI = 'mongodb+srv://joseseb400:CIeReeRiiSf74FOX@bot.2bwfk.mongodb.net/?retryWrites=true&w=majority&appName=BOT';
+const client = new MongoClient(MONGO_URI);
+let db;
+
+async function connectToDatabase() {
+    try {
+        await client.connect();
+        db = client.db('Test1'); // Use the "Test1" database
+        console.log("Connected to MongoDB.");
+    } catch (error) {
+        console.error("MongoDB connection error:", error.message);
+    }
+}
+
+// The WebSocket URL for Solana mainnet-beta
+const WS_URL = 'https://api.mainnet-beta.solana.com/';
+
+// Connect to Solana cluster using the provided WebSocket URL
+const connection = new Connection(WS_URL, 'confirmed');
+
+// The address of the Raydium AMM program on Solana
+const RAYDIUM_AMM_PROGRAM_ID = new PublicKey('675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8');
+
+// Function to subscribe to transactions on the Solana blockchain
+async function subscribeRaydium() {
+    console.log("Listening for new Raydium LP transactions...");
+
+    connection.onLogs(RAYDIUM_AMM_PROGRAM_ID, async (log) => {
+        try {
+            // Filter logs to find 'InitializeInstruction2' or 'CreatePool'
+            if (log.logs.some(line => line.includes('InitializeInstruction2') || line.includes('CreatePool'))) {
+                console.log("New AMM LP transaction found!");
+
+                const signature = log.signature;
+                console.log("Transaction Signature:", signature);
+
+                // Fetch the full transaction details
+                const transactionDetails = await connection.getTransaction(signature, {
+                    commitment: 'confirmed',
+                    maxSupportedTransactionVersion: 0
+                });
+
+                if (transactionDetails) {
+                    console.log("Transaction Details:", transactionDetails);
+
+                    // Decode transaction message and instruction data
+                    const message = transactionDetails.transaction.message;
+
+                    // Get account keys involved in the transaction
+                    const accountKeys = message.staticAccountKeys.map(key => key.toString());
+                    console.log("Accounts involved in transaction:", accountKeys);
+
+                    // Decode instructions in the transaction
+                    message.instructions.forEach((instruction, index) => {
+                        console.log(`Instruction ${index + 1}:`);
+
+                        // Decode the program ID associated with the instruction
+                        const programId = message.staticAccountKeys[instruction.programIdIndex].toString();
+                        console.log(`Program ID: ${programId}`);
+
+                        // Decode the instruction data (base58 format)
+                        const decodedData = bs58.decode(instruction.data);
+                        console.log("Instruction Data:", decodedData);
+
+                        // Get the accounts used in this instruction
+                        const instructionAccounts = instruction.accountKeyIndexes.map(i => message.staticAccountKeys[i].toString());
+                        console.log("Instruction Accounts:", instructionAccounts);
+
+                        // Check if this is the 'InitializeInstruction2' or 'CreatePool' instruction
+                        if (log.logs.some(line => line.includes('InitializeInstruction2') || line.includes('CreatePool'))) {
+                            console.log("Detected LP Creation Instruction.");
+
+                            // Extract ammId and coin_address
+                            const ammId = instructionAccounts[1];
+                            const coinAddress = instructionAccounts[2];
+
+                            // Insert the event into MongoDB
+                            try {
+                                const result = db.collection('Test1').insertOne({ // Use the "Test1" collection
+                                    signature: signature,
+                                    ammId: ammId,
+                                    coin_address: coinAddress,
+                                    timestamp: new Date()
+                                });
+                                console.log("Inserted event into MongoDB:", result.insertedId);
+                            } catch (dbError) {
+                                console.error("Error inserting into MongoDB:", dbError.message);
+                            }
+                        }
+                    });
+                } else {
+                    console.error("Failed to fetch transaction details.");
+                }
+            }
+        } catch (error) {
+            console.error("Error processing AMM LP event:", error.message);
+        }
+    });
+}
+
+// Start the subscription and connect to MongoDB
+(async () => {
+    await connectToDatabase();
+    subscribeRaydium().catch(console.error);
+})();
